@@ -7,3 +7,6 @@ spring:
       max-request-size: 5MB
   application:
     name: practice
+app:
+  storage:
+    suspicious-directory: ./storage/suspicious
