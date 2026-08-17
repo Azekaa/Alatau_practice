@@ -2,9 +2,13 @@ package Alatau.practice.service;
 
 import Alatau.practice.dto.PdfResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.cos.COSBase;
+import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSName;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,7 +40,7 @@ public class PdfService {
         }
         log.info("File pass basic checking: {}, File size: {}", fileName,file.getSize());
 
-        List<String> detectedObject = new ArrayList<>();
+        List<String> detectedObject = findDangerousObj(file);
         if (detectedObject.isEmpty()){
             log.info("File is safe: {}", fileName);
             return new PdfResponse(fileName,true,"No unsafe object detected",detectedObject);
@@ -44,5 +48,31 @@ public class PdfService {
         log.warn("unsafe objects detected: {}: {}", fileName,detectedObject);
         return new PdfResponse(fileName,false,"Unsafe objects detected",detectedObject);
     }
+    private List<String> findDangerousObj(MultipartFile file){
+        List<String> detectedObject = new ArrayList<>();
+        try(PDDocument document = Loader.loadPDF(file.getBytes())) {
+            COSDictionary catalog = document.getDocumentCatalog().getCOSObject();
+            checkDictionary(catalog,detectedObject);
+
+        }catch (Exception e){
+            log.error("Error reading PDF: {}", file.getOriginalFilename(),e);
+        }
+        return detectedObject;
+    }
+
+    private void checkDictionary(COSDictionary catalog, List<String> detectedObject) {
+        for (COSName key : catalog.keySet()){
+            String objectName = "/" + key.getName();
+            if (Dangerous_objects.contains(objectName)){
+                detectedObject.add(objectName);
+                log.warn("unsafe object detected: {}", objectName);
+            }
+        COSBase value = catalog.getDictionaryObject(key);
+            if (value instanceof COSDictionary nestedDict){
+                checkDictionary(nestedDict,detectedObject);
+            }
+        }
+    }
+
 
 }
