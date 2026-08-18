@@ -2,6 +2,7 @@ package Alatau.practice.service;
 
 import Alatau.practice.dto.PdfResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
@@ -9,8 +10,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -53,7 +58,9 @@ public class PdfService {
         try(PDDocument document = Loader.loadPDF(file.getBytes())) {
             COSDictionary catalog = document.getDocumentCatalog().getCOSObject();
             checkDictionary(catalog,detectedObject);
-
+        for (var page : document.getPages()){
+            checkDictionary(page.getCOSObject(),detectedObject);
+        }
         }catch (Exception e){
             log.error("Error reading PDF: {}", file.getOriginalFilename(),e);
         }
@@ -64,15 +71,41 @@ public class PdfService {
         for (COSName key : catalog.keySet()){
             String objectName = "/" + key.getName();
             if (Dangerous_objects.contains(objectName)){
+                if(!detectedObject.contains(objectName)){
                 detectedObject.add(objectName);
+                }
                 log.warn("unsafe object detected: {}", objectName);
             }
         COSBase value = catalog.getDictionaryObject(key);
             if (value instanceof COSDictionary nestedDict){
                 checkDictionary(nestedDict,detectedObject);
             }
+            if (value instanceof COSArray array){
+                checkArray(array,detectedObject);
+            }
         }
     }
+    private void checkArray(COSArray array, List<String> detectedObject){
+        for (COSBase item : array){
+            if (item instanceof COSDictionary dictionary){
+                checkDictionary(dictionary,detectedObject);
+            }
+            if (item instanceof COSArray nestedArray){
+                checkArray(nestedArray,detectedObject );
+            }
+        }
+    }
+    private void storageFile(MultipartFile file){
+        try {
+            Path diriectory = Path.of("storage/suspicious");
+            Files.createDirectories(diriectory);
+            String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+            Path filePath = diriectory.resolve(fileName);
+            file.transferTo(filePath);
+            log.warn("Suspicious file saved: {}", filePath);
+        }catch (Exception e){
+            log.error("Failed to save the suspicious file: {}" , file.getOriginalFilename(),e);
+        }
 
-
+    }
 }
